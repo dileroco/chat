@@ -9,65 +9,66 @@ class ContactController extends Controller
 {
     public function contacts(Request $request)
     {
-        // دعم CORS مثل المشروع القديم
+        $senderId = $request->session()->get('user_id');
 
-        if ($request->isMethod('options')) {
-            return response()->json([], 200);
+        if (!$senderId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not logged in',
+                'data' => ['loggedin' => false],
+            ], 401);
         }
 
-        // استرجاع user_id من session فقط
-        $sender_id = session('user_id');
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
 
-        if (!$sender_id) {
-            return response()->json([], 200);
-        }
+        $searchLike = '%'.trim($data['search'] ?? '').'%';
 
-        // بحث
-        $search = $request->query('search', '');
-        $searchParam = "%$search%";
-
-        // استعلام مثل الكود القديم
-        $contacts = DB::select("
-            SELECT 
-                u.id,
+        $contacts = DB::select('
+            SELECT
+                u.id AS user_id,
                 u.full_name,
                 u.username,
-                IFNULL(u.profile_picture, 'default.png') AS profile_picture,
+                IFNULL(u.profile_picture, "default.png") AS profile_picture,
                 (
-                    SELECT COUNT(*) 
-                    FROM messages m
-                    WHERE m.sender_id = u.id
-                    AND m.receiver_id = ?
-                    AND m.status = 'unread'
+                    SELECT COUNT(*)
+                    FROM messages unread_messages
+                    WHERE unread_messages.sender_id = u.id
+                        AND unread_messages.receiver_id = ?
+                        AND unread_messages.status = "unread"
                 ) AS unread_count
             FROM users u
             WHERE u.id IN (
-                SELECT m.sender_id FROM messages m WHERE m.receiver_id = ?
+                SELECT messages.sender_id
+                FROM messages
+                WHERE messages.receiver_id = ?
                 UNION
-                SELECT m.receiver_id FROM messages m WHERE m.sender_id = ?
+                SELECT messages.receiver_id
+                FROM messages
+                WHERE messages.sender_id = ?
             )
             AND (u.full_name LIKE ? OR u.username LIKE ?)
             ORDER BY (
-                SELECT MAX(created_at)
+                SELECT MAX(messages.created_at)
                 FROM messages
-                WHERE (sender_id = u.id AND receiver_id = ?)
-                   OR (receiver_id = u.id AND sender_id = ?)
+                WHERE (messages.sender_id = u.id AND messages.receiver_id = ?)
+                    OR (messages.receiver_id = u.id AND messages.sender_id = ?)
             ) DESC
-        ", [
-            $sender_id,
-            $sender_id,
-            $sender_id,
-            $searchParam,
-            $searchParam,
-            $sender_id,
-            $sender_id
+        ', [
+            $senderId,
+            $senderId,
+            $senderId,
+            $searchLike,
+            $searchLike,
+            $senderId,
+            $senderId,
         ]);
 
         return response()->json([
             'status' => 'success',
-            
-            'data' => $contacts
-            
+            'message' => 'Contacts retrieved successfully',
+            'data' => $contacts,
         ]);
     }
 }

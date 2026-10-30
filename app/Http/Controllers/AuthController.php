@@ -1,140 +1,117 @@
 <?php
 
 namespace App\Http\Controllers;
-use Illuminate\Support\Facades\Cookie;
-use Illuminate\Http\Request;
+
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        // دعم CORS مثل الكود القديم
-
-        if ($request->isMethod('options')) {
-            return response()->json([], 200);
-        }
-
-        // تحقق من المدخلات
-        $request->validate([
-            'username' => 'required|string',
-            'password' => 'required|string'
+        $request->merge([
+            'username' => strtolower(trim((string) $request->input('username'))),
         ]);
 
-        $username = strtolower(trim($request->username));
-        $password = trim($request->password);
+        $credentials = $request->validate([
+            'username' => ['required', 'string', 'max:50'],
+            'password' => ['required', 'string'],
+        ]);
 
-        $user = User::where('username', $username)->first();
+        $user = User::where('username', $credentials['username'])->first();
 
-        if (!$user) {
+        if (!$user || !$this->passwordMatches($user, $credentials['password'])) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No user found with that username'
-            ], 404);
-        }
-
-        // تحقق كلمة المرور
-        
-        if ($user->password === hash_hmac('sha256', $password, 'iqbolshoh')) {
-            // تحويل HMAC إلى bcrypt عند أول login
-            $user->password_bcrypt = Hash::make($password);
-            $user->password = Hash::make($password);
-            $user->save();
-        } 
-        else if($user->password && Hash::check($password, $user->password)) {
-            // login ناجح
-        } 
-        
-        else {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Incorrect username or password'
+                'message' => 'Incorrect username or password',
             ], 401);
         }
 
-        // إنشاء Session
-        $request->session()->regenerate();
-        session(['loggedin' => true]);
-        session(['user_id' => $user->id]);
-        session(['full_name' => $user->full_name]);
-        session(['email' => $user->email]);
-        session(['username' => $user->username]);
-        session(['profile_picture' => $user->profile_picture]);
+        if (Hash::needsRehash($user->password)) {
+            $user->forceFill(['password' => Hash::make($credentials['password'])])->save();
+        }
 
-        // إنشاء Cookies (مثل الكود القديم)
-        cookie()->queue('username', $username, 60*24*30); // 30 يوم
-        cookie()->queue('session_token', session()->getId(), 60*24*30);
-       
+        $this->startUserSession($request, $user);
+
         return response()->json([
             'status' => 'success',
             'message' => 'Login successful',
-            'data' => [
-                'loggedin' => true,
-                'user_id' => $user->id,
-                'full_name' => $user->full_name,
-                'email' => $user->email,
-                'username' => $user->username,
-                'profile_picture' => $user->profile_picture,
-                'created_at' => $user->created_at
-            ]
-        ], 200);
+            'data' => $this->userData($user),
+        ]);
     }
 
-    public function signup(Request $request){
-        if ($request->isMethod("options")){
-            return(response()->json([],200));
-        }
-        $request->validate([
-            "full_name" => "required|string|max:255",
-            "email" => "required|email|unique:users,email",
-            "username" => "required|string|max:50|unique:users,username",
-            "password" => "required|string|min:8|confirmed"
+    public function signup(Request $request)
+    {
+        $request->merge([
+            'full_name' => trim((string) $request->input('full_name')),
+            'email' => strtolower(trim((string) $request->input('email'))),
+            'username' => strtolower(trim((string) $request->input('username'))),
         ]);
 
-        User::create([
-            "full_name" => $request->full_name,
-            "email" => $request->email,
-            "username" => $request->username,
-            "password" => Hash::make($request->password)
-        
-
+        $data = $request->validate([
+            'full_name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'username' => ['required', 'string', 'max:50', 'unique:users,username'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
-        $user = User::where('username', $request->username)->first();
-        cookie()->queue('username', $user->username, 60*24*30); // 30 يوم
-        cookie()->queue('session_token', session()->getId(), 60*24*30);
-       
-        $request->session()->regenerate();
-        session(["loggedin" => true]);
-        session(['user_id' => $user->id]);
-        session(['full_name' => $user->full_name]);
-        session(['email' => $user->email]);
-        session(['username' => $user->username]);
-        session(['profile_picture' => $user->profile_picture]);
 
-        return response()->json([
-            "status" =>  "success",
-            "message" => "singup successfully "
+        $user = User::create([
+            'full_name' => $data['full_name'],
+            'email' => $data['email'],
+            'username' => $data['username'],
+            'password' => Hash::make($data['password']),
         ]);
- 
 
-    }
-
-
-    public function logout(Request $request){
-
-        // destroy session
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        // delete cookies
-        Cookie::queue(Cookie::forget('username'));
-        Cookie::queue(Cookie::forget('session_token'));
+        $this->startUserSession($request, $user);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'User successfully logged out'
+            'message' => 'Signup successful',
+            'data' => $this->userData($user),
+        ], 201);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'User successfully logged out',
         ]);
     }
-    
+
+    private function passwordMatches(User $user, string $password): bool
+    {
+        return Hash::check($password, (string) $user->password);
+    }
+
+    private function startUserSession(Request $request, User $user): void
+    {
+        $request->session()->regenerate();
+        $request->session()->put([
+            'loggedin' => true,
+            'user_id' => $user->id,
+            'full_name' => $user->full_name,
+            'email' => $user->email,
+            'username' => $user->username,
+            'profile_picture' => $user->profile_picture,
+        ]);
+
+    }
+
+    private function userData(User $user): array
+    {
+        return [
+            'loggedin' => true,
+            'user_id' => $user->id,
+            'full_name' => $user->full_name,
+            'email' => $user->email,
+            'username' => $user->username,
+            'profile_picture' => $user->profile_picture,
+            'created_at' => $user->created_at,
+        ];
+    }
 }

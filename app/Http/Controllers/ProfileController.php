@@ -4,93 +4,98 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
 
 class ProfileController extends Controller
 {
-
     public function fetch(Request $request)
     {
+        $userId = $request->session()->get('user_id');
 
-        if (!Session::get('loggedin')) {
+        if (!$userId) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'User is not logged in',
-                'data' => ['loggedin' => false]
-            ]);
+                'data' => ['loggedin' => false],
+            ], 401);
         }
 
-        $userId = Session::get('user_id');
-
-        $user = DB::table('users')->where('id', $userId)->first();
+        $user = DB::table('users')
+            ->select(['id', 'full_name', 'email', 'username', 'profile_picture', 'created_at'])
+            ->where('id', $userId)
+            ->first();
 
         if (!$user) {
+            $request->session()->invalidate();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'User not found'
-            ]);
+                'message' => 'User not found',
+            ], 404);
         }
 
         if ($request->isMethod('post')) {
+            $request->merge([
+                'full_name' => trim((string) $request->input('full_name')),
+            ]);
 
-            $full_name = trim($request->input('full_name'));
-            $password = $request->input('password');
-            $profile_picture = $user->profile_picture;
+            $data = $request->validate([
+                'full_name' => ['required', 'string', 'max:255'],
+                'password' => ['nullable', 'string', 'min:8'],
+                'profile_picture' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:2048'],
+            ]);
+
+            $profilePicture = $user->profile_picture;
 
             if ($request->hasFile('profile_picture')) {
+                $directory = public_path('react/images/profile-picture');
+                File::ensureDirectoryExists($directory);
 
                 $file = $request->file('profile_picture');
+                $newFileName = Str::uuid().'.'.$file->extension();
+                $file->move($directory, $newFileName);
 
-                $allowed = ['jpg','jpeg','png','gif'];
-
-                if (!in_array($file->extension(), $allowed)) {
-                    return response()->json([
-                        'status'=>'error',
-                        'message'=>'Invalid file type'
-                    ]);
+                if ($profilePicture && $profilePicture !== 'default.png') {
+                    File::delete($directory.DIRECTORY_SEPARATOR.$profilePicture);
                 }
 
-                $newFileName = md5(time().$file->getClientOriginalName()).'.'.$file->extension();
-
-                $file->move(public_path('react/images/profile-picture/'), $newFileName);
-
-                if ($profile_picture && $profile_picture !== 'default.png') {
-                    $old = public_path('react/images/profile-picture/'.$profile_picture);
-                    if (file_exists($old)) {
-                        unlink($old);
-                    }
-                }
-
-                $profile_picture = $newFileName;
+                $profilePicture = $newFileName;
             }
 
             $updateData = [
-                'full_name'=>$full_name,
-                'profile_picture'=>$profile_picture
+                'full_name' => trim($data['full_name']),
+                'profile_picture' => $profilePicture,
             ];
 
-            if (!empty($password)) {
-                $updateData['password'] = Hash::make($password);
+            if (!empty($data['password'] ?? null)) {
+                $updateData['password'] = Hash::make($data['password']);
             }
 
-            DB::table('users')->where('id',$userId)->update($updateData);
+            DB::table('users')->where('id', $userId)->update($updateData);
 
-            Session::put('full_name',$full_name);
-            Session::put('profile_picture',$profile_picture);
+            $request->session()->put([
+                'full_name' => $updateData['full_name'],
+                'profile_picture' => $profilePicture,
+            ]);
+
+            $user = DB::table('users')
+                ->select(['id', 'full_name', 'email', 'username', 'profile_picture', 'created_at'])
+                ->where('id', $userId)
+                ->first();
 
             return response()->json([
-                'status'=>'success',
-                'message'=>'Profile updated successfully',
-                'data'=>$updateData
+                'status' => 'success',
+                'message' => 'Profile updated successfully',
+                'data' => $user,
             ]);
         }
 
         return response()->json([
-            'status'=>'success',
-            'message'=>'User data fetched successfully',
-            'data'=>$user
+            'status' => 'success',
+            'message' => 'User data fetched successfully',
+            'data' => $user,
         ]);
     }
-
 }

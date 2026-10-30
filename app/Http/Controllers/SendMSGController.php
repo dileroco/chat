@@ -9,61 +9,50 @@ class SendMSGController extends Controller
 {
     public function sendMessage(Request $request)
     {
-        // CORS
- 
-        if ($request->isMethod('options')) {
-            return response()->json([], 200);
-        }
+        $senderId = $request->session()->get('user_id');
 
-        $response = [
-            'status' => '',
-            'message' => '',
-            'data' => []
-        ];
-
-        // تحقق من session
-        if (!session('loggedin')) {
+        if (!$senderId) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'User is not logged in'
-            ]);
+                'message' => 'User is not logged in',
+            ], 401);
         }
 
-        try {
+        $data = $request->validate([
+            'receiver_id' => ['required', 'integer', 'exists:users,id'],
+            'content' => ['required', 'string', 'max:5000'],
+        ]);
 
-            $content = trim($request->input('content'));
-            $receiver_id = $request->input('receiver_id');
-
-            if (!$content || !$receiver_id) {
-                throw new \Exception('Content and receiver_id are required');
-            }
-
-            $sender_id = session('user_id');
-
-            $id = DB::table('messages')->insertGetId([
-                'sender_id' => $sender_id,
-                'receiver_id' => $receiver_id,
-                'content' => $content,
-                'created_at' => now()
-            ]);
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Message sent successfully',
-                'data' => [
-                    'id' => $id,
-                    'content' => $content,
-                    'created_at' => now()
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-
+        if ((int) $data['receiver_id'] === (int) $senderId) {
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
-
+                'message' => 'You cannot send a message to yourself',
+            ], 422);
         }
+
+        $content = trim($data['content']);
+
+        if ($content === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Message content is required',
+            ], 422);
+        }
+
+        $id = DB::table('messages')->insertGetId([
+            'sender_id' => $senderId,
+            'receiver_id' => $data['receiver_id'],
+            'content' => $content,
+            'status' => 'unread',
+            'created_at' => now(),
+        ]);
+
+        $message = DB::table('messages')->where('id', $id)->first();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Message sent successfully',
+            'data' => $message,
+        ], 201);
     }
 }

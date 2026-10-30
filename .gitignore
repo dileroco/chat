@@ -16,6 +16,8 @@
 /public/build
 /public/hot
 /public/storage
+/public/react/images/profile-picture/*
+!/public/react/images/profile-picture/default.png
 /storage/*.key
 /storage/pail
 /vendor

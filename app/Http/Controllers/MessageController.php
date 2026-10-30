@@ -9,61 +9,45 @@ class MessageController extends Controller
 {
     public function fetchMessages(Request $request)
     {
-        // دعم CORS
+        $senderId = $request->session()->get('user_id');
 
-        if ($request->isMethod('options')) {
-            return response()->json([], 200);
-        }
-
-        // التحقق من session
-        $sender_id = session('user_id');
-        if (!$sender_id) {
+        if (!$senderId) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'User is not logged in',
-                'data' => ['loggedin' => false]
-            ]);
+                'data' => ['loggedin' => false],
+            ], 401);
         }
 
-        $receiver_id = $request->input('id');
-        if (!$receiver_id) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Receiver ID is required'
-            ]);
-        }
+        $data = $request->validate([
+            'id' => ['required', 'integer', 'exists:users,id'],
+        ]);
 
-        // تحديث الرسائل الغير مقروءة
+        $receiverId = (int) $data['id'];
+
         DB::table('messages')
-            ->where('sender_id', $receiver_id)
-            ->where('receiver_id', $sender_id)
+            ->where('sender_id', $receiverId)
+            ->where('receiver_id', $senderId)
             ->where('status', 'unread')
             ->update(['status' => 'read']);
 
-        // استرجاع الرسائل بين المستخدمين
         $messages = DB::table('messages')
-            ->where(function($q) use ($sender_id, $receiver_id) {
-                $q->where('sender_id', $sender_id)
-                  ->where('receiver_id', $receiver_id);
+            ->where(function ($query) use ($senderId, $receiverId) {
+                $query->where('sender_id', $senderId)
+                    ->where('receiver_id', $receiverId);
             })
-            ->orWhere(function($q) use ($sender_id, $receiver_id) {
-                $q->where('sender_id', $receiver_id)
-                  ->where('receiver_id', $sender_id);
+            ->orWhere(function ($query) use ($senderId, $receiverId) {
+                $query->where('sender_id', $receiverId)
+                    ->where('receiver_id', $senderId);
             })
             ->orderBy('created_at')
+            ->orderBy('id')
             ->get();
-
-        if ($messages->isEmpty()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'No messages found'
-            ]);
-        }
 
         return response()->json([
             'status' => 'success',
             'message' => 'Messages fetched successfully',
-            'data' => $messages
+            'data' => $messages,
         ]);
     }
 }
