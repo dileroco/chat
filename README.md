@@ -1,48 +1,35 @@
-# Chat API
+# Chat Web App
 
-Laravel backend for the chat mobile and web clients.
+A modern messaging application built to provide a smooth and intuitive communication experience.
 
-## Requirements
+## Preview
 
-- PHP 8.2+
-- Composer
-- MySQL (or another configured Laravel database)
-- Node.js and npm for the optional web assets
+Explore the application's interface and main features through the screenshots below.
 
-## Setup
 
-```bash
-composer install
-copy .env.example .env
-php artisan key:generate
-php artisan migrate
-php artisan serve --host=0.0.0.0
-```
+![Chat Interface 1](screenshots/chat-1.png)
 
-Configure the database values in `.env` before running migrations. Never commit `.env`.
+![Chat Interface 2](screenshots/chat-2.png)
 
-The API is available under `/api`. The mobile client uses:
+![Chat Interface 3](screenshots/chat-3.png)
 
-- Android emulator: `http://10.0.2.2:8000/api`
-- iOS simulator or desktop browser: `http://127.0.0.1:8000/api`
-- Physical device: `http://YOUR_COMPUTER_LAN_IP:8000/api`
+![Chat Interface 4](screenshots/chat-4.png)
 
-## Tests
+![Chat Interface 5](screenshots/chat-5.png)
 
-```bash
-php artisan test
-```
+![Chat Interface 6](screenshots/chat-6.png)
+## Features
 
-## Main endpoints
+- Real-time messaging and conversation updates.
+- User authentication and account management.
+- User profiles and profile picture management.
+- Contact management.
+- Responsive and intuitive chat interface.
+- Message notifications.
 
-- `POST /api/login`
-- `POST /api/signup`
-- `POST /api/logout`
-- `GET /api/profile`
-- `POST /api/profile`
-- `GET /api/users`
-- `GET /api/contacts`
-- `POST /api/messages`
-- `POST /api/send-message`
+## Technologies
 
-Profile images are stored in `public/react/images/profile-picture` and should be treated as user-uploaded data rather than source code.
+- **Frontend:** React, JavaScript, HTML, CSS.
+- **Backend:** Laravel, PHP.
+- **Database:** MySQL.
+
